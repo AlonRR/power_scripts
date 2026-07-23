@@ -164,7 +164,11 @@ function Invoke-ImageBatch {
 
         try {
             Write-ProgressStatus -Item $item
-            Move-PictureToDateFolder @ProcessParams -Item $item
+            # StopOnError is a batch control key, not a Move-PictureToDateFolder parameter, so
+            # strip it before splatting or the call fails with "parameter cannot be found".
+            $moveParams = $ProcessParams.Clone()
+            $moveParams.Remove('StopOnError')
+            Move-PictureToDateFolder @moveParams -Item $item
 
             if ($ResumeFile) {
                 $ProcessedFiles[$item.FullName] = [DateTime]::Now
@@ -282,6 +286,7 @@ function Get-FileDate {
         $dateTakenIndex = Get-DateTakenPropertyIndex $folder
 
         if ($dateTakenIndex -lt 0) {
+            $script:metrics.LastWriteTimeUsed++
             return @{
                 Date   = $Item.LastWriteTime
                 Source = "LastWriteTime"
@@ -290,6 +295,7 @@ function Get-FileDate {
 
         $dateTaken = $folder.GetDetailsOf($file, $dateTakenIndex)
         if ([string]::IsNullOrEmpty($dateTaken) -or $dateTaken -match '^\s*$') {
+            $script:metrics.LastWriteTimeUsed++
             return @{
                 Date   = $Item.LastWriteTime
                 Source = "LastWriteTime"
@@ -333,6 +339,7 @@ function Get-FileDate {
         }
     } catch {
         Write-Verbose "Error getting file date: $_"
+        $script:metrics.LastWriteTimeUsed++
         return @{
             Date   = $Item.LastWriteTime
             Source = "LastWriteTime"
@@ -839,10 +846,14 @@ function Move-PicturesByDate {
             MaxDate              = $MaxDate
             DateFormats          = $DateFormats
             MaxFileSize          = $MaxFileSize
-            CancellationToken    = $cancellationSource?.Token
             WhatIf               = $WhatIfPreference
             StopOnError          = $StopOnError
             LogFile              = $resolvedLogPath
+        }
+        # Only pass a cancellation token when one exists; the parameter is a non-nullable
+        # struct and cannot accept $null.
+        if ($cancellationSource) {
+            $processParams['CancellationToken'] = $cancellationSource.Token
         }
     }
 
