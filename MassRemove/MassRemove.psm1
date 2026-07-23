@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Recursively removes folders with a given name under a root path.
@@ -30,20 +31,24 @@ function Remove-FoldersByName {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param (
         [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
         [string]$FolderName,
 
         [Parameter(Mandatory = $true, Position = 1)]
+        [ValidateNotNullOrEmpty()]
         [string]$RootPath
     )
+
+    Set-StrictMode -Version Latest
 
     try {
         if (-not (Test-Path -Path $RootPath)) {
             throw "Root path '$RootPath' does not exist."
         }
 
-        Get-ChildItem -Path $RootPath -Recurse -Directory |
-        Where-Object { $_.Name -eq $FolderName } |
-        ForEach-Object {
+        Get-ChildItem -Path $RootPath -Recurse -Directory
+        | Where-Object { $_.Name -eq $FolderName }
+        | ForEach-Object {
             $folderFull = $_.FullName
             if ($PSCmdlet.ShouldProcess($folderFull, 'Remove folder')) {
                 Remove-Item -LiteralPath $folderFull -Recurse -Force -ErrorAction Stop
