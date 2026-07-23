@@ -1,1 +1,12 @@
 .env
+
+# logs and shell-redirect artifacts
+*.log
+/echo
+/file.log
+
+# scratch/backup area (held copied File History catalogs, now removed)
+/file_history/
+
+# VM_status is its own separate git repo — do not fold it into this one
+/VM_status/

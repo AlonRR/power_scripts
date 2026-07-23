@@ -1,4 +1,4 @@
-$fso = new-object -com Scripting.FileSystemObject
+﻿$fso = new-object -com Scripting.FileSystemObject
 Get-ChildItem -Directory `
 | Select-Object @{l = 'Size'; e = { $fso.GetFolder($_.FullName).Size } }, FullName `
 | Sort-Object Size -Descending `

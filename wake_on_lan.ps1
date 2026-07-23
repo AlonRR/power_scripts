@@ -1,4 +1,4 @@
-function Send-WakeOnLan {
+﻿function Send-WakeOnLan {
     <#
     .SYNOPSIS
         Sends a Wake-on-LAN magic packet to a specified MAC address.
@@ -22,7 +22,7 @@ function Send-WakeOnLan {
         [string]$MacAddress,
 
         [Parameter()]
-        [int]$Port = 40000,
+        [int]$Port = 9,
 
         [Parameter()]
         [ValidateScript({ Test-Path $_ })]
@@ -33,8 +33,8 @@ function Send-WakeOnLan {
         try {
             if (-not $MacAddress) {
                 $MacAddress = Get-Content $FilePath |
-                Where-Object { $_ -match '^MAC_ADDRESS:' } |
-                ForEach-Object { $_ -replace 'MAC_ADDRESS:', '' }
+                    Where-Object { $_ -match '^MAC_ADDRESS:' } |
+                    ForEach-Object { $_ -replace 'MAC_ADDRESS:', '' }
 
                 if (-not $MacAddress) {
                     throw "MAC_ADDRESS not found in file: $FilePath"
