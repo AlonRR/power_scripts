@@ -3,25 +3,28 @@ using namespace Microsoft.Windows.PowerShell.ScriptAnalyzer.Generic
 function Measure-PipelineOperatorPosition {
     <#
     .SYNOPSIS
-        Ensures pipeline operators are at the start of lines.
+        Ensures that where a pipeline is split across lines, the '|' starts the continuation line.
 
     .DESCRIPTION
-        This rule checks PowerShell scripts to ensure that pipeline operators (|)
-        appear at the start of lines rather than at the end of lines.
+        When a pipeline spans multiple lines, the pipe operator should lead the continuation line
+        rather than trail the previous one. Single-line pipelines are not flagged - only a pipeline
+        that is already broken across lines with a trailing '|' is a violation.
 
     .PARAMETER ast
-        The AST (Abstract Syntax Tree) of the script being analyzed.
+        The script block AST being analyzed.
 
     .EXAMPLE
-        # Good:
+        # Good (leading '|'):
         Get-Process
         | Where-Object { $_.CPU -gt 10 }
         | Sort-Object CPU
 
-        # Bad:
+        # Good (single line):
+        Get-Process | Sort-Object CPU
+
+        # Bad (trailing '|'):
         Get-Process |
-        Where-Object { $_.CPU -gt 10 } |
-        Sort-Object CPU
+        Where-Object { $_.CPU -gt 10 }
 
     .NOTES
         Rule Name: PipelineOperatorPosition
@@ -36,10 +39,20 @@ function Measure-PipelineOperatorPosition {
         $ast
     )
 
-    # Initialize results array
     $results = [System.Collections.Generic.List[DiagnosticRecord]]::new()
 
     try {
+        # Source lines, indexed so that file line N is $lines[N - 1]. Prefer the file on disk;
+        # fall back to the AST's own text (offset by where the AST starts) for in-memory analysis.
+        if ($ast.Extent.File -and (Test-Path -LiteralPath $ast.Extent.File)) {
+            $lines = Get-Content -LiteralPath $ast.Extent.File
+            $lineOffset = 0
+        }
+        else {
+            $lines = $ast.Extent.Text -split "\r?\n"
+            $lineOffset = $ast.Extent.StartLineNumber - 1
+        }
+
         $pipelineAsts = $ast.FindAll({
                 param($node) $node -is [System.Management.Automation.Language.PipelineAst]
             }, $true)
@@ -47,9 +60,19 @@ function Measure-PipelineOperatorPosition {
         foreach ($pipeline in $pipelineAsts) {
             $elements = $pipeline.PipelineElements
             for ($i = 1; $i -lt $elements.Count; $i++) {
-                if ($elements[$i].Extent.StartLineNumber -eq $elements[$i - 1].Extent.EndLineNumber) {
+                $prevEndLine = $elements[$i - 1].Extent.EndLineNumber
+                $curStartLine = $elements[$i].Extent.StartLineNumber
+
+                # Only multi-line pipelines can violate this rule; single-line pipes are fine.
+                if ($curStartLine -le $prevEndLine) { continue }
+
+                $idx = $prevEndLine - 1 - $lineOffset
+                if ($idx -lt 0 -or $idx -ge $lines.Count) { continue }
+
+                # Trailing '|' means the previous element's line ends with the operator.
+                if ($lines[$idx].TrimEnd().EndsWith('|')) {
                     $results.Add([DiagnosticRecord]::new(
-                            "Pipeline operator '|' must be at the start of a new line",
+                            "Pipeline operator '|' should start the continuation line, not trail the previous one",
                             $elements[$i].Extent,
                             'Measure-PipelineOperatorPosition',
                             [DiagnosticSeverity]::Warning,
@@ -58,7 +81,8 @@ function Measure-PipelineOperatorPosition {
                 }
             }
         }
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($PSItem)
     }
 

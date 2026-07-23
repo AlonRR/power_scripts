@@ -10,3 +10,6 @@
 
 # VM_status is its own separate git repo — do not fold it into this one
 /VM_status/
+
+# accidental Export-Alias output from show_edge_workspaces.ps1
+/Show-Edge-Workspaces

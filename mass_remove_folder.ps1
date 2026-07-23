@@ -39,9 +39,9 @@ function Remove-FoldersByName {
             throw "Root path '$RootPath' does not exist."
         }
 
-        Get-ChildItem -Path $RootPath -Recurse -Directory |
-        Where-Object { $_.Name -eq $FolderName } |
-        ForEach-Object {
+        Get-ChildItem -Path $RootPath -Recurse -Directory
+        | Where-Object { $_.Name -eq $FolderName }
+        | ForEach-Object {
             $folderFull = $_.FullName
             if ($PSCmdlet.ShouldProcess($folderFull, 'Remove folder')) {
                 Remove-Item -LiteralPath $folderFull -Recurse -Force -ErrorAction Stop

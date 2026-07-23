@@ -1,11 +1,11 @@
-﻿function Send-WakeOnLan {
+function Send-WakeOnLan {
     <#
     .SYNOPSIS
         Sends a Wake-on-LAN magic packet to a specified MAC address.
     .PARAMETER MacAddress
         The MAC address of the target computer.
     .PARAMETER Port
-        The UDP port to send the magic packet to (default: 40000).
+        The UDP port to send the magic packet to (default: 9, the standard discard port used for WoL).
     .PARAMETER FilePath
         The path to the file containing the MAC address. If not specified, the script will look for a file named '.env' in the current directory.
     .EXAMPLE
@@ -32,9 +32,9 @@
     process {
         try {
             if (-not $MacAddress) {
-                $MacAddress = Get-Content $FilePath |
-                    Where-Object { $_ -match '^MAC_ADDRESS:' } |
-                    ForEach-Object { $_ -replace 'MAC_ADDRESS:', '' }
+                $MacAddress = Get-Content $FilePath
+                | Where-Object { $_ -match '^MAC_ADDRESS:' }
+                | ForEach-Object { $_ -replace 'MAC_ADDRESS:', '' }
 
                 if (-not $MacAddress) {
                     throw "MAC_ADDRESS not found in file: $FilePath"
@@ -48,11 +48,13 @@
             # Convert MAC address to byte array
             $MacByteArray = $MacAddress -split '[:-]' | ForEach-Object { [Byte] "0x$_" }
 
-            # Create magic packet (6 bytes of 0xFF followed by 16 repetitions of MAC address)
-            [Byte[]]$MagicPacket = (, [Byte]255 * 6)
+            # Create magic packet: 6 bytes of 0xFF followed by 16 repetitions of the MAC address.
+            $packet = [System.Collections.Generic.List[byte]]::new()
+            $packet.AddRange([byte[]](, [byte]255 * 6))
             for ($i = 0; $i -lt 16; $i++) {
-                $MagicPacket += $MacByteArray
+                $packet.AddRange([byte[]]$MacByteArray)
             }
+            [Byte[]]$MagicPacket = $packet.ToArray()
 
             $UdpClient = New-Object System.Net.Sockets.UdpClient
             try {
