@@ -201,6 +201,23 @@ Describe 'Move-PicturesByDate (integration)' {
         @(Get-ChildItem (Join-Path $nestedDest '2020\05') -File).Count | Should -Be 1
     }
 
+    It 'tidies a folder in place when Source and Destination are the same directory' {
+        # Loose files in the root get filed into YYYY\MM; files already filed stay put (not
+        # re-sorted onto themselves). This is the guard's DirectoryName (not FullName) behaviour.
+        New-TestImage -Path (Join-Path $src 'loose1.jpg') -LastWrite ([datetime]'2021-03-14')
+        New-TestImage -Path (Join-Path $src 'loose2.jpg') -LastWrite ([datetime]'2022-07-02')
+        New-Item -ItemType Directory -Path (Join-Path $src '2020\05') -Force | Out-Null
+        New-TestImage -Path (Join-Path $src '2020\05\already.jpg') -LastWrite ([datetime]'2020-05-01')
+
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $src; LogFile = $log }
+
+        Join-Path $src '2021\03\loose1.jpg' | Should -Exist                # loose root file filed
+        Join-Path $src '2022\07\loose2.jpg' | Should -Exist                # loose root file filed
+        Join-Path $src '2020\05\already.jpg' | Should -Exist               # already-filed file untouched
+        @(Get-ChildItem (Join-Path $src '2020\05') -File).Count | Should -Be 1   # not re-sorted / duplicated
+        @(Get-ChildItem $src -File).Count | Should -Be 0                   # nothing left loose in the root
+    }
+
     It 'handles and de-collides filenames containing square brackets' {
         New-Item -ItemType Directory -Path (Join-Path $src 'one'), (Join-Path $src 'two') -Force | Out-Null
         New-TestImage -Path (Join-Path $src 'one\photo[1].jpg') -LastWrite ([datetime]'2022-06-15')

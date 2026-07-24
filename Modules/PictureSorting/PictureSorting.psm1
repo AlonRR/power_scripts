@@ -1019,13 +1019,18 @@ function Move-PicturesByDate {
 
     process {
         try {
-            # Files already under the destination must be skipped: with -Recurse, a destination
-            # nested inside the source (e.g. Pictures -> Pictures\Camera Roll) would otherwise
-            # re-process already-sorted files.
+            # Skip files that already sit in a sorted subfolder of the destination. Testing the
+            # file's PARENT directory (not its full path) is deliberate: it excludes files already
+            # filed under Destination\YYYY\MM, while still INCLUDING loose files sitting directly in
+            # the destination root - which is exactly the "tidy a folder in place" case where
+            # Source == Destination. Matching on FullName instead would exclude those loose root
+            # files too (their path also begins with the destination), making an in-place sort a
+            # silent no-op. Files under a nested destination (Pictures -> Pictures\Camera Roll) are
+            # still skipped, since their parent is under the destination prefix.
             $destPrefix = ((Resolve-Path -LiteralPath $DestinationDirectory).ProviderPath).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
             $items = @(Get-ChildItem -Path $SourceDirectory -File -Recurse
                 | Where-Object { $FileExtensions -contains $_.Extension.ToLower() }
-                | Where-Object { -not $_.FullName.StartsWith($destPrefix, [System.StringComparison]::OrdinalIgnoreCase) })
+                | Where-Object { -not $_.DirectoryName.StartsWith($destPrefix, [System.StringComparison]::OrdinalIgnoreCase) })
 
             $script:totalItems = $items.Count
             Write-ProcessLog -Message "Found $($items.Count) matching files to process" -LogFile $resolvedLogPath
