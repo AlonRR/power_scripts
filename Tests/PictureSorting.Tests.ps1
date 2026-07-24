@@ -63,6 +63,21 @@ BeforeAll {
         }
     }
 
+    # Writes a minimal RAW file carrying the little-endian TIFF signature (49 49 2A 00) that DNG
+    # and TIFF-based RAWs begin with - enough for the signature check, no real decode.
+    function New-TestRawImage {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper, not a public cmdlet.')]
+        param(
+            [Parameter(Mandatory)][string]$Path,
+            [datetime]$LastWrite
+        )
+        $bytes = [byte[]]@(0x49, 0x49, 0x2A, 0x00) + [byte[]]::new(28)
+        [System.IO.File]::WriteAllBytes($Path, $bytes)
+        if ($PSBoundParameters.ContainsKey('LastWrite')) {
+            (Get-Item -LiteralPath $Path).LastWriteTime = $LastWrite
+        }
+    }
+
     # Runs Move-PicturesByDate non-interactively, swallowing the Information/warning/error streams
     # (some tests deliberately feed it bad files and assert on the counted errors afterwards).
     function Invoke-Sort {
@@ -273,6 +288,19 @@ Describe 'Move-PicturesByDate (integration)' {
         @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
     }
 
+    It 'sorts a DNG raw image into a YYYY/MM folder (GDI+ cannot decode it)' {
+        New-TestRawImage -Path (Join-Path $src 'IMG_0001.dng') -LastWrite ([datetime]'2019-03-20')
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
+        Join-Path $dest '2019\03\IMG_0001.dng' | Should -Exist
+    }
+
+    It 'rejects a .dng that lacks the TIFF signature' {
+        Set-Content -LiteralPath (Join-Path $src 'fake.dng') -Value 'this is text, not a RAW image'
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
+        Join-Path $src 'fake.dng' | Should -Exist                       # not moved
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
+    }
+
     It 'removes the source directory when -RemoveEmptySource is set and the move empties it' {
         New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; RemoveEmptySource = $true }
@@ -324,6 +352,21 @@ Describe 'Private helpers' {
             Confirm-VideoFile -Path $G | Should -BeTrue
             Confirm-VideoFile -Path $B | Should -BeFalse
             Confirm-VideoFile -Path $E | Should -BeFalse
+        }
+    }
+
+    It 'Confirm-RawImageFile accepts a TIFF-signed DNG and rejects text or empty files' {
+        $good = Join-Path $TestDrive 'good.dng'
+        New-TestRawImage -Path $good
+        $bad = Join-Path $TestDrive 'bad.dng'
+        Set-Content -LiteralPath $bad -Value 'not a raw image, just text'
+        $empty = Join-Path $TestDrive 'empty.dng'
+        [System.IO.File]::WriteAllBytes($empty, [byte[]]::new(0))
+        InModuleScope PictureSorting -Parameters @{ G = $good; B = $bad; E = $empty } {
+            param($G, $B, $E)
+            Confirm-RawImageFile -Path $G | Should -BeTrue
+            Confirm-RawImageFile -Path $B | Should -BeFalse
+            Confirm-RawImageFile -Path $E | Should -BeFalse
         }
     }
 

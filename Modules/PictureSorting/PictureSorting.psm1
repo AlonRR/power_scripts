@@ -26,10 +26,14 @@ $script:processedCount = $script:skipCount = $script:errorCount = 0
 # Loaded lazily on first image validation, then reused (not re-added per file).
 $script:DrawingLoaded = $false
 
-# Media types the sorter handles. Images are validated by decoding; videos by a lightweight
-# signature/size check (a full decode would need an external tool). Videos rarely carry an EXIF
-# "date taken", so they normally sort by LastWriteTime.
+# Media types the sorter handles. Standard images are validated by decoding (System.Drawing);
+# videos and RAW images by a lightweight signature/size check (a full decode would need an
+# external tool, and GDI+ cannot decode camera RAW at all). Videos and RAW images usually sort by
+# LastWriteTime, though DNG carries EXIF so it often gets a real "date taken".
 $script:ImageExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')
+# RAW formats GDI+ can't decode; validated by their TIFF container signature instead. DNG (and the
+# common TIFF-based RAWs) begin with the TIFF magic, so Confirm-RawImageFile accepts them.
+$script:RawImageExtensions = @('.dng')
 $script:VideoExtensions = @('.mp4', '.mov', '.m4v', '.3gp', '.avi', '.mkv', '.webm', '.wmv')
 
 <#
@@ -442,6 +446,43 @@ function Confirm-VideoFile {
 
 <#
 .SYNOPSIS
+    Checks that a file is a plausible RAW image by its container signature (not a full decode).
+.DESCRIPTION
+    GDI+ (Confirm-ImageFile) cannot decode camera RAW such as DNG, so those valid images would be
+    rejected as "corrupted". DNG and the common TIFF-based RAWs begin with the TIFF magic - 'II' +
+    0x2A00 (little-endian) or 'MM' + 0x002A (big-endian). Accepting that signature catches a text
+    file renamed .dng while still passing real RAW files through.
+.OUTPUTS
+    System.Boolean.
+#>
+function Confirm-RawImageFile {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $stream = $null
+    try {
+        $info = [System.IO.FileInfo]::new($Path)
+        if ($info.Length -eq 0) { return $false }
+
+        $head = [byte[]]::new(4)
+        $stream = [System.IO.File]::OpenRead($Path)
+        $read = $stream.Read($head, 0, 4)
+        if ($read -lt 4) { return $false }
+
+        # TIFF header: 49 49 2A 00 (little-endian) or 4D 4D 00 2A (big-endian).
+        $littleEndian = $head[0] -eq 0x49 -and $head[1] -eq 0x49 -and $head[2] -eq 0x2A -and $head[3] -eq 0x00
+        $bigEndian = $head[0] -eq 0x4D -and $head[1] -eq 0x4D -and $head[2] -eq 0x00 -and $head[3] -eq 0x2A
+        return ($littleEndian -or $bigEndian)
+    } catch {
+        return $false
+    } finally {
+        if ($stream) { $stream.Dispose() }
+    }
+}
+
+<#
+.SYNOPSIS
     Gets current memory usage of the PowerShell process.
 .OUTPUTS
     System.Double. Memory usage in MB.
@@ -682,10 +723,16 @@ function Move-PictureToDateFolder {
                 throw "File is locked by another process: $($Item.FullName)"
             }
 
-            # Validate by media type: videos get the lightweight check, images the decode check.
-            if ($script:VideoExtensions -contains $Item.Extension.ToLower()) {
+            # Validate by media type: videos and RAW get a lightweight signature check, standard
+            # images the GDI+ decode check (which cannot handle RAW, hence the separate branch).
+            $ext = $Item.Extension.ToLower()
+            if ($script:VideoExtensions -contains $ext) {
                 if (-not (Confirm-VideoFile -Path $Item.FullName)) {
                     throw "Invalid or unreadable video file: $($Item.FullName)"
+                }
+            } elseif ($script:RawImageExtensions -contains $ext) {
+                if (-not (Confirm-RawImageFile -Path $Item.FullName)) {
+                    throw "Invalid or unreadable RAW image file: $($Item.FullName)"
                 }
             } elseif (-not (Confirm-ImageFile -Path $Item.FullName)) {
                 throw "Invalid or corrupted image file: $($Item.FullName)"
@@ -867,7 +914,7 @@ function Move-PicturesByDate {
                 }
                 return $true
             })]
-        [string[]]$FileExtensions = ($script:ImageExtensions + $script:VideoExtensions),
+        [string[]]$FileExtensions = ($script:ImageExtensions + $script:RawImageExtensions + $script:VideoExtensions),
 
         [Parameter()]
         [ValidateScript({
