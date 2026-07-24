@@ -568,7 +568,7 @@ function Move-PictureToDateFolder {
 
             # Create year and month folders
             $yearFolder = Join-Path -Path $DestinationDirectory -ChildPath $fileDate.ToString('yyyy')
-            $monthFolder = Join-Path -Path $yearFolder -ChildPath $fileDate.ToString('MM-MMMM')
+            $monthFolder = Join-Path -Path $yearFolder -ChildPath $fileDate.ToString('MM')
             foreach ($folder in @($yearFolder, $monthFolder)) {
                 if (-not (Test-Path -Path $folder)) {
                     if ($PSCmdlet.ShouldProcess($folder, "Create Directory")) {
@@ -691,7 +691,7 @@ function Move-PictureToDateFolder {
 
 .NOTES
     Requires PowerShell 7.0 or later. Uses the Shell.Application COM object for EXIF extraction.
-    Creates a Destination\YYYY\MM-MonthName folder structure.
+    Creates a Destination\YYYY\MM folder structure (for example 2024\03).
 #>
 function Move-PicturesByDate {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High', DefaultParameterSetName = 'Default')]

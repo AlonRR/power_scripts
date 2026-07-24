@@ -73,11 +73,11 @@ Describe 'Move-PicturesByDate (integration)' {
         Remove-Item -LiteralPath $script:log -Force -ErrorAction SilentlyContinue
     }
 
-    It 'sorts a no-EXIF image into a YYYY/MM-MonthName folder by LastWriteTime' {
+    It 'sorts a no-EXIF image into a YYYY/MM folder by LastWriteTime' {
         New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14 09:00')
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
-        Join-Path $dest '2021\03-March\a.jpg' | Should -Exist
+        Join-Path $dest '2021\03\a.jpg' | Should -Exist
         @(Get-ChildItem $src -File).Count | Should -Be 0
     }
 
@@ -86,8 +86,8 @@ Describe 'Move-PicturesByDate (integration)' {
         New-TestImage -Path (Join-Path $src 'e.jpg') -DateTaken ([datetime]'2015-06-15 10:30') -LastWrite ([datetime]'2022-01-01')
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
-        Join-Path $dest '2015\06-June\e.jpg' | Should -Exist
-        Join-Path $dest '2022\01-January\e.jpg' | Should -Not -Exist
+        Join-Path $dest '2015\06\e.jpg' | Should -Exist
+        Join-Path $dest '2022\01\e.jpg' | Should -Not -Exist
         InModuleScope PictureSorting { $script:metrics.DateTakenUsed } | Should -Be 1
     }
 
@@ -104,7 +104,7 @@ Describe 'Move-PicturesByDate (integration)' {
         Set-Content -LiteralPath (Join-Path $src 'ignore.txt') -Value 'not an image'
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
-        Join-Path $dest '2020\05-May\keep.jpg' | Should -Exist
+        Join-Path $dest '2020\05\keep.jpg' | Should -Exist
         Join-Path $src 'ignore.txt' | Should -Exist   # untouched
     }
 
@@ -114,7 +114,7 @@ Describe 'Move-PicturesByDate (integration)' {
         New-TestImage -Path (Join-Path $src 'two\pic.jpg') -LastWrite ([datetime]'2019-07-20')
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
-        $monthDir = Join-Path $dest '2019\07-July'
+        $monthDir = Join-Path $dest '2019\07'
         @(Get-ChildItem $monthDir -File).Count | Should -Be 2
         Join-Path $monthDir 'pic.jpg'   | Should -Exist
         Join-Path $monthDir 'pic_1.jpg' | Should -Exist
@@ -137,7 +137,7 @@ Describe 'Move-PicturesByDate (integration)' {
         New-TestImage -Path (Join-Path $src 'o.jpg') -DateTaken ([datetime]'2015-06-15') -LastWrite ([datetime]'2021-08-09')
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; MinDate = [datetime]'2020-01-01' }
 
-        Join-Path $dest '2021\08-August\o.jpg' | Should -Exist
+        Join-Path $dest '2021\08\o.jpg' | Should -Exist
         InModuleScope PictureSorting { $script:metrics.InvalidDates } | Should -Be 1
     }
 
