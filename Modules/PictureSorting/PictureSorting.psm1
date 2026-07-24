@@ -26,6 +26,12 @@ $script:processedCount = $script:skipCount = $script:errorCount = 0
 # Loaded lazily on first image validation, then reused (not re-added per file).
 $script:DrawingLoaded = $false
 
+# Media types the sorter handles. Images are validated by decoding; videos by a lightweight
+# signature/size check (a full decode would need an external tool). Videos rarely carry an EXIF
+# "date taken", so they normally sort by LastWriteTime.
+$script:ImageExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')
+$script:VideoExtensions = @('.mp4', '.mov', '.m4v', '.3gp', '.avi', '.mkv', '.webm', '.wmv')
+
 <#
 .SYNOPSIS
     Retries a file operation multiple times before failing.
@@ -398,6 +404,44 @@ function Confirm-ImageFile {
 
 <#
 .SYNOPSIS
+    Checks that a file is a plausible, readable video (not a full decode).
+.DESCRIPTION
+    A full video decode needs an external tool, which this module avoids. Instead: reject empty
+    files, require the MP4/MOV/M4V family to carry the 'ftyp' box (catches a text file renamed to
+    .mp4), and accept other readable non-empty containers.
+.OUTPUTS
+    System.Boolean.
+#>
+function Confirm-VideoFile {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $stream = $null
+    try {
+        $info = [System.IO.FileInfo]::new($Path)
+        if ($info.Length -eq 0) { return $false }
+
+        $head = [byte[]]::new(12)
+        $stream = [System.IO.File]::OpenRead($Path)
+        $read = $stream.Read($head, 0, 12)
+        if ($read -lt 8) { return $false }
+
+        $ext = $info.Extension.ToLower()
+        if ($ext -in '.mp4', '.mov', '.m4v') {
+            # ISO base media: bytes 4-7 are the 'ftyp' box type.
+            return ([System.Text.Encoding]::ASCII.GetString($head, 4, 4) -eq 'ftyp')
+        }
+        return $true   # other containers: readable and non-empty is enough
+    } catch {
+        return $false
+    } finally {
+        if ($stream) { $stream.Dispose() }
+    }
+}
+
+<#
+.SYNOPSIS
     Gets current memory usage of the PowerShell process.
 .OUTPUTS
     System.Double. Memory usage in MB.
@@ -638,8 +682,12 @@ function Move-PictureToDateFolder {
                 throw "File is locked by another process: $($Item.FullName)"
             }
 
-            # Validate image file
-            if (-not (Confirm-ImageFile -Path $Item.FullName)) {
+            # Validate by media type: videos get the lightweight check, images the decode check.
+            if ($script:VideoExtensions -contains $Item.Extension.ToLower()) {
+                if (-not (Confirm-VideoFile -Path $Item.FullName)) {
+                    throw "Invalid or unreadable video file: $($Item.FullName)"
+                }
+            } elseif (-not (Confirm-ImageFile -Path $Item.FullName)) {
                 throw "Invalid or corrupted image file: $($Item.FullName)"
             }
 
@@ -715,9 +763,11 @@ function Move-PictureToDateFolder {
     Organizes pictures into folders based on their date taken or last modified date.
 
 .DESCRIPTION
-    Moves image files from a source directory to a destination directory, organizing them into
-    year/month subfolders based on either EXIF "date taken" or last write time. Supports batch
-    processing, resume, dry-run, and validation options.
+    Moves image and video files from a source directory to a destination directory, organizing them
+    into year/month subfolders based on either EXIF "date taken" or last write time. Images are
+    validated by decoding; videos by a lightweight signature check. Videos usually carry no embedded
+    date, so they sort by last write time. Supports batch processing, resume, dry-run, and
+    validation options.
 
 .PARAMETER SourceDirectory
     The directory containing the images to organize. Must be an existing directory.
@@ -726,7 +776,7 @@ function Move-PictureToDateFolder {
     The root directory where organized folders will be created (year/month subfolders).
 
 .PARAMETER FileExtensions
-    Extensions to process. Defaults to common image formats.
+    Extensions to process. Defaults to common image and video formats.
 
 .PARAMETER LogFile
     Path to the log file (.log extension). Defaults to sort_pictures.log in the current directory.
@@ -812,7 +862,7 @@ function Move-PicturesByDate {
                 }
                 return $true
             })]
-        [string[]]$FileExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'),
+        [string[]]$FileExtensions = ($script:ImageExtensions + $script:VideoExtensions),
 
         [Parameter()]
         [ValidateScript({

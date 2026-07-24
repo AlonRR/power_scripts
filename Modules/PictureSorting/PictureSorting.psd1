@@ -3,7 +3,7 @@
     ModuleVersion     = '1.0.0'
     GUID              = 'b3f5c1a2-6d4e-4a7b-9c8d-0e1f2a3b4c5d'
     Author            = 'AlonRR'
-    Description       = 'Organizes pictures into year/month folders by EXIF date taken or last write time.'
+    Description       = 'Organizes photos and videos into year/month folders by EXIF date taken or last write time.'
     PowerShellVersion = '7.0'
 
     # Only the public command and its aliases are exposed; all helpers are private.

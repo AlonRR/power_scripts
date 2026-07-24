@@ -49,6 +49,20 @@ BeforeAll {
         }
     }
 
+    # Writes a minimal but signature-valid .mp4 (24-byte box with an 'ftyp' at offset 4).
+    function New-TestVideo {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper, not a public cmdlet.')]
+        param(
+            [Parameter(Mandatory)][string]$Path,
+            [datetime]$LastWrite
+        )
+        $bytes = [byte[]]@(0, 0, 0, 0x18) + [System.Text.Encoding]::ASCII.GetBytes('ftypisom') + [byte[]]::new(12)
+        [System.IO.File]::WriteAllBytes($Path, $bytes)
+        if ($PSBoundParameters.ContainsKey('LastWrite')) {
+            (Get-Item -LiteralPath $Path).LastWriteTime = $LastWrite
+        }
+    }
+
     # Runs Move-PicturesByDate non-interactively, swallowing the Information/warning/error streams
     # (some tests deliberately feed it bad files and assert on the counted errors afterwards).
     function Invoke-Sort {
@@ -220,6 +234,27 @@ Describe 'Move-PicturesByDate (integration)' {
 
         Should -Invoke -ModuleName PictureSorting Suspend-OneDriveSync -Times 0
     }
+
+    It 'sorts a video by LastWriteTime into a YYYY/MM folder' {
+        New-TestVideo -Path (Join-Path $src 'clip.mp4') -LastWrite ([datetime]'2023-05-20')
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
+        Join-Path $dest '2023\05\clip.mp4' | Should -Exist
+    }
+
+    It 'sorts images and videos together in one run' {
+        New-TestImage -Path (Join-Path $src 'p.jpg') -LastWrite ([datetime]'2022-04-10')
+        New-TestVideo -Path (Join-Path $src 'v.mp4') -LastWrite ([datetime]'2022-04-15')
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
+        Join-Path $dest '2022\04\p.jpg' | Should -Exist
+        Join-Path $dest '2022\04\v.mp4' | Should -Exist
+    }
+
+    It 'rejects a .mp4 that is not a real video' {
+        Set-Content -LiteralPath (Join-Path $src 'fake.mp4') -Value 'this is not a video at all'
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
+        Join-Path $src 'fake.mp4' | Should -Exist                       # not moved
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
+    }
 }
 
 Describe 'Private helpers' {
@@ -237,6 +272,21 @@ Describe 'Private helpers' {
         InModuleScope PictureSorting -Parameters @{ Dir = $dir } {
             param($Dir)
             Get-UniqueFilePath -BasePath $Dir -FileName 'x.jpg' | Should -Be (Join-Path $Dir 'x_1.jpg')
+        }
+    }
+
+    It 'Confirm-VideoFile accepts a valid signature and rejects a text file or empty file' {
+        $good = Join-Path $TestDrive 'good.mp4'
+        New-TestVideo -Path $good
+        $bad = Join-Path $TestDrive 'bad.mp4'
+        Set-Content -LiteralPath $bad -Value 'not a video at all, just text'
+        $empty = Join-Path $TestDrive 'empty.mp4'
+        [System.IO.File]::WriteAllBytes($empty, [byte[]]::new(0))
+        InModuleScope PictureSorting -Parameters @{ G = $good; B = $bad; E = $empty } {
+            param($G, $B, $E)
+            Confirm-VideoFile -Path $G | Should -BeTrue
+            Confirm-VideoFile -Path $B | Should -BeFalse
+            Confirm-VideoFile -Path $E | Should -BeFalse
         }
     }
 
