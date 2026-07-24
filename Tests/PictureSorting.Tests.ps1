@@ -198,6 +198,28 @@ Describe 'Move-PicturesByDate (integration)' {
         Test-Path -LiteralPath (Join-Path $monthDir 'photo[1].jpg')   | Should -BeTrue
         Test-Path -LiteralPath (Join-Path $monthDir 'photo[1]_1.jpg') | Should -BeTrue
     }
+
+    It 'pauses and resumes OneDrive around the move when -PauseOneDriveSync is set' {
+        # Mock the module's own pause/resume so the real OneDrive is never touched.
+        Mock -ModuleName PictureSorting Suspend-OneDriveSync { 'C:\fake\OneDrive.exe' }
+        Mock -ModuleName PictureSorting Resume-OneDriveSync { }
+        New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
+
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; PauseOneDriveSync = $true }
+
+        Should -Invoke -ModuleName PictureSorting Suspend-OneDriveSync -Times 1
+        Should -Invoke -ModuleName PictureSorting Resume-OneDriveSync -Times 1
+        Join-Path $dest '2021\03\a.jpg' | Should -Exist   # the move still happened
+    }
+
+    It 'does not pause OneDrive for a dry run even if -PauseOneDriveSync is set' {
+        Mock -ModuleName PictureSorting Suspend-OneDriveSync { 'C:\fake\OneDrive.exe' }
+        New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
+
+        Move-PicturesByDate -SourceDirectory $src -DestinationDirectory $dest -LogFile $log -DryRun -ConfirmAll -PauseOneDriveSync 6>$null 3>$null | Out-Null
+
+        Should -Invoke -ModuleName PictureSorting Suspend-OneDriveSync -Times 0
+    }
 }
 
 Describe 'Private helpers' {
@@ -252,6 +274,44 @@ Describe 'Private helpers' {
         InModuleScope PictureSorting -Parameters @{ P = (Join-Path $TestDrive 'gone.jpg') } {
             param($P)
             Get-FileLock -Path $P | Should -BeFalse
+        }
+    }
+
+    It 'Suspend-OneDriveSync returns null and stops nothing when OneDrive is not running' {
+        InModuleScope PictureSorting {
+            Mock Get-Process { $null }
+            Mock Stop-Process { }
+            Suspend-OneDriveSync | Should -BeNullOrEmpty
+            Should -Invoke Stop-Process -Times 0
+        }
+    }
+
+    It 'Suspend-OneDriveSync stops OneDrive and returns its path when running' {
+        InModuleScope PictureSorting {
+            # Id is needed so the "| Stop-Process" pipeline binds (Stop-Process -Id by property name).
+            Mock Get-Process { [pscustomobject]@{ Path = 'C:\fake\OneDrive.exe'; Id = 4242 } }
+            Mock Stop-Process { }
+            Mock Start-Sleep { }
+            Suspend-OneDriveSync | Should -Be 'C:\fake\OneDrive.exe'
+            Should -Invoke Stop-Process -Times 1
+        }
+    }
+
+    It 'Resume-OneDriveSync does nothing when given no path' {
+        InModuleScope PictureSorting {
+            Mock Start-Process { }
+            Resume-OneDriveSync -Path ''
+            Should -Invoke Start-Process -Times 0
+        }
+    }
+
+    It 'Resume-OneDriveSync restarts OneDrive from the given path' {
+        InModuleScope PictureSorting {
+            Mock Get-Process { $null }
+            Mock Test-Path { $true }
+            Mock Start-Process { }
+            Resume-OneDriveSync -Path 'C:\fake\OneDrive.exe'
+            Should -Invoke Start-Process -Times 1
         }
     }
 

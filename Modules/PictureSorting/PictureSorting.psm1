@@ -496,6 +496,55 @@ function Get-MetricsSummary {
 
 <#
 .SYNOPSIS
+    Stops the OneDrive client so its upload/lock activity can't block file moves.
+.DESCRIPTION
+    Move-Item into a OneDrive-synced folder can fail with "access denied" when OneDrive holds a
+    file open to sync it. Stopping the client removes that contention; the already-hydrated files
+    still move fine, and Resume-OneDriveSync restarts it afterwards to sync the result.
+.OUTPUTS
+    System.String. The path of the stopped OneDrive.exe (pass to Resume-OneDriveSync), or $null if
+    it was not running.
+#>
+function Suspend-OneDriveSync {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $proc = Get-Process -Name OneDrive -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $proc) {
+        Write-Verbose 'OneDrive is not running; nothing to pause.'
+        return $null
+    }
+    $path = $proc.Path
+    Write-Verbose "Pausing OneDrive (stopping $path) so it does not lock files during the move."
+    Get-Process -Name OneDrive -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2   # let any in-flight file locks release
+    return $path
+}
+
+<#
+.SYNOPSIS
+    Restarts the OneDrive client that Suspend-OneDriveSync stopped.
+#>
+function Resume-OneDriveSync {
+    [CmdletBinding()]
+    param([string]$Path)
+
+    if ([string]::IsNullOrEmpty($Path)) { return }
+    if (Get-Process -Name OneDrive -ErrorAction SilentlyContinue) {
+        Write-Verbose 'OneDrive is already running.'
+        return
+    }
+    if (Test-Path -LiteralPath $Path) {
+        Write-Verbose "Resuming OneDrive: $Path"
+        Start-Process -FilePath $Path
+    } else {
+        Write-Warning "Could not restart OneDrive; not found at: $Path"
+    }
+}
+
+<#
+.SYNOPSIS
     Moves a picture file to a dated folder structure.
 .DESCRIPTION
     Moves an image file to a destination folder structure organized by year and month,
@@ -698,8 +747,16 @@ function Move-PictureToDateFolder {
 .PARAMETER BatchSize
     Number of files per batch. Default 100.
 
+.PARAMETER PauseOneDriveSync
+    Stops the OneDrive client for the duration of the move and restarts it afterwards. Use when the
+    source or destination is inside OneDrive: it prevents the "access denied" failures that occur
+    when OneDrive locks files it is syncing. Ignored for -DryRun (nothing moves).
+
 .EXAMPLE
     Move-PicturesByDate -Source C:\Photos -Destination D:\Organized -DryRun
+
+.EXAMPLE
+    Move-PicturesByDate -Source "$HOME\OneDrive\Pictures\WhatsApp Images" -Destination "$HOME\OneDrive\Pictures\Camera Roll" -ConfirmAll -PauseOneDriveSync
 
 .EXAMPLE
     Move-PicturesByDate -Source C:\Photos -Destination D:\Organized -ConfirmAll
@@ -796,7 +853,10 @@ function Move-PicturesByDate {
         [switch]$EnableCancel,
 
         [Parameter()]
-        [int]$BatchSize = 100
+        [int]$BatchSize = 100,
+
+        [Parameter()]
+        [switch]$PauseOneDriveSync
     )
 
     begin {
@@ -879,6 +939,10 @@ function Move-PicturesByDate {
         if ($cancellationSource) {
             $processParams['CancellationToken'] = $cancellationSource.Token
         }
+
+        # Pause OneDrive last - after everything above that could throw - so the resume in the
+        # process finally is always reached. Pointless for a dry run, which moves nothing.
+        $oneDrivePath = if ($PauseOneDriveSync -and -not $DryRun) { Suspend-OneDriveSync } else { $null }
     }
 
     process {
@@ -932,6 +996,8 @@ Errors encountered: $($script:errorCount)
                 [System.GC]::Collect()
                 [System.GC]::WaitForPendingFinalizers()
             }
+            # Always restart OneDrive if we paused it (no-op when $oneDrivePath is $null).
+            Resume-OneDriveSync -Path $oneDrivePath
             Write-Progress -Activity 'Sorting Pictures' -Completed
             Write-ProcessLog -Message 'Script completed' -LogFile $resolvedLogPath
 
