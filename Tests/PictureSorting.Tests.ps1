@@ -78,7 +78,7 @@ Describe 'Move-PicturesByDate (integration)' {
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
         Join-Path $dest '2021\03-March\a.jpg' | Should -Exist
-        (Get-ChildItem $src -File).Count | Should -Be 0
+        @(Get-ChildItem $src -File).Count | Should -Be 0
     }
 
     It 'sorts an EXIF image by its date taken, not its LastWriteTime' {
@@ -95,8 +95,8 @@ Describe 'Move-PicturesByDate (integration)' {
         New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
         Move-PicturesByDate -SourceDirectory $src -DestinationDirectory $dest -LogFile $log -DryRun -ConfirmAll 6>$null 3>$null | Out-Null
 
-        (Get-ChildItem $src -File).Count | Should -Be 1
-        (Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
+        @(Get-ChildItem $src -File).Count | Should -Be 1
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
     }
 
     It 'processes only the configured file extensions' {
@@ -115,7 +115,7 @@ Describe 'Move-PicturesByDate (integration)' {
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
         $monthDir = Join-Path $dest '2019\07-July'
-        (Get-ChildItem $monthDir -File).Count | Should -Be 2
+        @(Get-ChildItem $monthDir -File).Count | Should -Be 2
         Join-Path $monthDir 'pic.jpg'   | Should -Exist
         Join-Path $monthDir 'pic_1.jpg' | Should -Exist
     }
@@ -129,7 +129,7 @@ Describe 'Move-PicturesByDate (integration)' {
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; ResumeFile = $resume }
 
         Join-Path $src 'r.jpg' | Should -Exist            # not moved - it was skipped
-        (Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
     }
 
     It 'falls back to LastWriteTime when the EXIF date is outside MinDate/MaxDate' {
@@ -146,7 +146,7 @@ Describe 'Move-PicturesByDate (integration)' {
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
 
         Join-Path $src 'fake.jpg' | Should -Exist         # not moved
-        (Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
         InModuleScope PictureSorting { $script:errorCount } | Should -BeGreaterThan 0
     }
 
@@ -155,7 +155,7 @@ Describe 'Move-PicturesByDate (integration)' {
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; MaxFileSize = 10 }
 
         Join-Path $src 'big.jpg' | Should -Exist          # over the 10-byte limit, not moved
-        (Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
     }
 
     It 'processes every file even when BatchSize is 1' {
@@ -164,8 +164,8 @@ Describe 'Move-PicturesByDate (integration)' {
         }
         Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; BatchSize = 1 }
 
-        (Get-ChildItem $dest -Recurse -File).Count | Should -Be 3
-        (Get-ChildItem $src -File).Count | Should -Be 0
+        @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 3
+        @(Get-ChildItem $src -File).Count | Should -Be 0
     }
 
     It 'throws when the destination directory does not exist' {

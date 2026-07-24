@@ -13,3 +13,6 @@
 
 # accidental Export-Alias output from show_edge_workspaces.ps1
 /Show-Edge-Workspaces
+
+# local Pester cache created by Invoke-Tests.ps1 when Pester 5+ isn't installed
+/.pester/
