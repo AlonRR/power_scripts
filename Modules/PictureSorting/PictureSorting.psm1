@@ -525,6 +525,11 @@ function Suspend-OneDriveSync {
 <#
 .SYNOPSIS
     Restarts the OneDrive client that Suspend-OneDriveSync stopped.
+.DESCRIPTION
+    OneDrive refuses to run with administrator rights ("OneDrive can't be run using full
+    administrator rights"). If this session is elevated, a plain Start-Process would launch it
+    elevated and it would immediately exit, so it is launched via explorer.exe, which runs as the
+    interactive (non-elevated) user. From a normal session it is started directly.
 #>
 function Resume-OneDriveSync {
     [CmdletBinding()]
@@ -535,11 +540,20 @@ function Resume-OneDriveSync {
         Write-Verbose 'OneDrive is already running.'
         return
     }
-    if (Test-Path -LiteralPath $Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Warning "Could not restart OneDrive; not found at: $Path"
+        return
+    }
+
+    $isElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($isElevated) {
+        # OneDrive won't run elevated; explorer.exe (medium IL) relaunches it as the user.
+        Write-Verbose "Resuming OneDrive de-elevated via explorer.exe: $Path"
+        Start-Process -FilePath "$env:WINDIR\explorer.exe" -ArgumentList "`"$Path`""
+    } else {
         Write-Verbose "Resuming OneDrive: $Path"
         Start-Process -FilePath $Path
-    } else {
-        Write-Warning "Could not restart OneDrive; not found at: $Path"
     }
 }
 
