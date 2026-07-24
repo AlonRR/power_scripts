@@ -816,6 +816,11 @@ function Move-PictureToDateFolder {
     source or destination is inside OneDrive: it prevents the "access denied" failures that occur
     when OneDrive locks files it is syncing. Ignored for -DryRun (nothing moves).
 
+.PARAMETER RemoveEmptySource
+    After the move, deletes the source directory if it holds no remaining files (for example when
+    every file sorted successfully). Left in place if any files remain, such as skipped or failed
+    ones. Ignored for -DryRun.
+
 .EXAMPLE
     Move-PicturesByDate -Source C:\Photos -Destination D:\Organized -DryRun
 
@@ -920,7 +925,10 @@ function Move-PicturesByDate {
         [int]$BatchSize = 100,
 
         [Parameter()]
-        [switch]$PauseOneDriveSync
+        [switch]$PauseOneDriveSync,
+
+        [Parameter()]
+        [switch]$RemoveEmptySource
     )
 
     begin {
@@ -1035,6 +1043,19 @@ function Move-PicturesByDate {
                 Invoke-ImageBatch -Items $batch -ProcessParams $batchParams -ProcessedFiles $processedFiles -ResumeFile $ResumeFile
                 [System.GC]::Collect()
                 Start-Sleep -Milliseconds 100
+            }
+
+            # Optionally remove the source directory if the move emptied it (no files left anywhere).
+            if ($RemoveEmptySource -and -not $DryRun) {
+                $remaining = @(Get-ChildItem -LiteralPath $SourceDirectory -File -Recurse -Force -ErrorAction SilentlyContinue).Count
+                if ($remaining -eq 0) {
+                    if ($PSCmdlet.ShouldProcess($SourceDirectory, 'Remove empty source directory')) {
+                        Remove-Item -LiteralPath $SourceDirectory -Recurse -Force -ErrorAction SilentlyContinue
+                        Write-Verbose "Removed empty source directory: $SourceDirectory"
+                    }
+                } else {
+                    Write-Verbose "Source kept: $remaining file(s) remain in $SourceDirectory"
+                }
             }
 
             Write-Information @"

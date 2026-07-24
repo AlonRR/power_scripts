@@ -255,6 +255,26 @@ Describe 'Move-PicturesByDate (integration)' {
         Join-Path $src 'fake.mp4' | Should -Exist                       # not moved
         @(Get-ChildItem $dest -Recurse -File).Count | Should -Be 0
     }
+
+    It 'removes the source directory when -RemoveEmptySource is set and the move empties it' {
+        New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; RemoveEmptySource = $true }
+        $src | Should -Not -Exist
+    }
+
+    It 'keeps the source directory when files remain, even with -RemoveEmptySource' {
+        New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
+        Set-Content -LiteralPath (Join-Path $src 'notes.txt') -Value 'keep me'   # not a media file
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log; RemoveEmptySource = $true }
+        $src | Should -Exist
+        Join-Path $src 'notes.txt' | Should -Exist
+    }
+
+    It 'does not remove the source on a dry run' {
+        New-TestImage -Path (Join-Path $src 'a.jpg') -LastWrite ([datetime]'2021-03-14')
+        Move-PicturesByDate -SourceDirectory $src -DestinationDirectory $dest -LogFile $log -DryRun -ConfirmAll -RemoveEmptySource 6>$null 3>$null | Out-Null
+        $src | Should -Exist
+    }
 }
 
 Describe 'Private helpers' {
