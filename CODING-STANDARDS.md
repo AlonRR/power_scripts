@@ -104,3 +104,15 @@ $ErrorActionPreference = 'Stop'
 - Keep functions focused; split anything past a few hundred lines. Reusable logic goes in a module
   under `Modules/` with a `.psd1` manifest, not a loose root `.ps1`.
 - Run **PSScriptAnalyzer** before committing; address the findings.
+
+## Testing
+
+- Tests live in `Tests/` as Pester files (`*.Tests.ps1`) and require **Pester 5+**
+  (Windows ships 3.4, which won't run them). Install with
+  `Install-Module Pester -Scope CurrentUser -Force -SkipPublisherCheck`, or `Save-Module` it to a
+  local path and import that.
+- Run the suite from the repo root: `Invoke-Pester -Path .\Tests`.
+- Use `$TestDrive` for scratch files (Pester auto-cleans it), `InModuleScope` to reach a module's
+  private functions, and real fixtures over mocks where practical — the picture-sorting tests build
+  actual JPEGs (some with injected EXIF) rather than mocking the Shell COM layer, which is how they
+  caught bugs a mock would have hidden.

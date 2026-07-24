@@ -230,7 +230,10 @@ function Write-ProcessError {
     $errorMsg = "Error processing $($Item.FullName): $ErrorRecord"
     $script:errors += $errorMsg
     $script:errorCount++
-    Write-Error $errorMsg
+    # Non-terminating on purpose: a single bad file must not abort the whole batch. The caller
+    # (Invoke-ImageBatch) decides whether to stop, via StopOnError. Because the module sets
+    # $ErrorActionPreference = 'Stop', a bare Write-Error here would terminate the run.
+    Write-Error $errorMsg -ErrorAction Continue
     Write-ProcessLog -Message $errorMsg -LogFile $LogFile
 }
 
