@@ -173,6 +173,31 @@ Describe 'Move-PicturesByDate (integration)' {
         { Move-PicturesByDate -SourceDirectory $src -DestinationDirectory (Join-Path $TestDrive 'nope') -LogFile $log -ConfirmAll 6>$null }
         | Should -Throw
     }
+
+    It 'skips files already under the destination when the destination is nested in the source' {
+        $nestedDest = Join-Path $src 'organized'
+        New-Item -ItemType Directory -Path (Join-Path $nestedDest '2020\05') -Force | Out-Null
+        New-TestImage -Path (Join-Path $nestedDest '2020\05\already.jpg') -LastWrite ([datetime]'2020-05-01')
+        New-TestImage -Path (Join-Path $src 'loose.jpg') -LastWrite ([datetime]'2021-03-14')
+
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $nestedDest; LogFile = $log }
+
+        Join-Path $nestedDest '2021\03\loose.jpg' | Should -Exist          # loose file sorted
+        Join-Path $nestedDest '2020\05\already.jpg' | Should -Exist        # already-sorted file untouched (not renamed)
+        @(Get-ChildItem (Join-Path $nestedDest '2020\05') -File).Count | Should -Be 1
+    }
+
+    It 'handles and de-collides filenames containing square brackets' {
+        New-Item -ItemType Directory -Path (Join-Path $src 'one'), (Join-Path $src 'two') -Force | Out-Null
+        New-TestImage -Path (Join-Path $src 'one\photo[1].jpg') -LastWrite ([datetime]'2022-06-15')
+        New-TestImage -Path (Join-Path $src 'two\photo[1].jpg') -LastWrite ([datetime]'2022-06-20')
+
+        Invoke-Sort @{ SourceDirectory = $src; DestinationDirectory = $dest; LogFile = $log }
+
+        $monthDir = Join-Path $dest '2022\06'
+        Test-Path -LiteralPath (Join-Path $monthDir 'photo[1].jpg')   | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $monthDir 'photo[1]_1.jpg') | Should -BeTrue
+    }
 }
 
 Describe 'Private helpers' {
@@ -220,6 +245,13 @@ Describe 'Private helpers' {
             finally {
                 [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($shell)
             }
+        }
+    }
+
+    It 'Get-FileLock reports a missing file as not locked' {
+        InModuleScope PictureSorting -Parameters @{ P = (Join-Path $TestDrive 'gone.jpg') } {
+            param($P)
+            Get-FileLock -Path $P | Should -BeFalse
         }
     }
 

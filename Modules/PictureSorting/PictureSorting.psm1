@@ -23,6 +23,8 @@ $script:CurrentLogFile = $null
 $script:totalItems = 0
 $script:errors = @()
 $script:processedCount = $script:skipCount = $script:errorCount = 0
+# Loaded lazily on first image validation, then reused (not re-added per file).
+$script:DrawingLoaded = $false
 
 <#
 .SYNOPSIS
@@ -98,6 +100,13 @@ function Get-FileLock {
                 $fileStream.Dispose()
             }
         }
+    } catch [System.IO.FileNotFoundException] {
+        # Not a lock - the file is gone. Report unlocked and let the caller's validation surface it.
+        Write-Verbose "File not found: $Path"
+        return $false
+    } catch [System.IO.DirectoryNotFoundException] {
+        Write-Verbose "Directory not found for: $Path"
+        return $false
     } catch [System.UnauthorizedAccessException] {
         Write-Verbose "Access denied to file: $Path"
         return $true
@@ -129,7 +138,9 @@ function Get-UniqueFilePath {
     $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
     $extension = [System.IO.Path]::GetExtension($FileName)
 
-    while (Test-Path -Path $targetPath) {
+    # -LiteralPath: filenames can contain [ ] which -Path would treat as wildcards, giving a
+    # false "no collision" and risking an overwrite.
+    while (Test-Path -LiteralPath $targetPath) {
         $newName = "{0}_{1}{2}" -f $baseName, $counter, $extension
         $targetPath = Join-Path -Path $BasePath -ChildPath $newName
         $counter++
@@ -171,8 +182,8 @@ function Invoke-ImageBatch {
             Move-PictureToDateFolder @moveParams -Item $item
 
             if ($ResumeFile) {
+                # Record in memory only; the file is persisted once per batch below.
                 $ProcessedFiles[$item.FullName] = [DateTime]::Now
-                $ProcessedFiles | ConvertTo-Json | Set-Content -Path $ResumeFile -Force
             }
         } catch {
             Write-ProcessError -Item $item -ErrorRecord $_ -LogFile $ProcessParams.LogFile
@@ -180,6 +191,12 @@ function Invoke-ImageBatch {
                 break
             }
         }
+    }
+
+    # Persist the resume file once per batch, not once per file: a per-file rewrite of the whole
+    # (growing) hashtable is O(n^2) and cripples large runs.
+    if ($ResumeFile) {
+        $ProcessedFiles | ConvertTo-Json | Set-Content -LiteralPath $ResumeFile -Force -Encoding UTF8
     }
 }
 
@@ -364,7 +381,10 @@ function Confirm-ImageFile {
     $stream = $null
     $img = $null
     try {
-        Add-Type -AssemblyName System.Drawing
+        if (-not $script:DrawingLoaded) {
+            Add-Type -AssemblyName System.Drawing
+            $script:DrawingLoaded = $true
+        }
         $stream = [System.IO.File]::OpenRead($Path)
         $img = [System.Drawing.Image]::FromStream($stream, $false, $false)
         return $true
@@ -530,9 +550,7 @@ function Move-PictureToDateFolder {
     begin {
         try {
             $startTime = [DateTime]::Now
-            $script:metrics.FileCount++
 
-            # Fix: Better error message for size limit
             if ($Item.Length -gt $MaxFileSize) {
                 $sizeInMB = [math]::Round($MaxFileSize / 1MB, 2)
                 throw [System.IO.IOException]::new(
@@ -580,10 +598,11 @@ function Move-PictureToDateFolder {
             # Generate unique destination path
             $destinationPath = Get-UniqueFilePath -BasePath $monthFolder -FileName $Item.Name
 
-            # Move file
+            # Move file. -LiteralPath so [ ] in names aren't treated as wildcards. -Force is for
+            # read-only/hidden files, not overwrites: $destinationPath was just proven unique.
             if ($PSCmdlet.ShouldProcess($destinationPath, "Move file")) {
                 Wait-FileOperation -Action {
-                    Move-Item -Path $Item.FullName -Destination $destinationPath -Force
+                    Move-Item -LiteralPath $Item.FullName -Destination $destinationPath -Force
                 } -OperationName "Move file" -MaxAttempts $LockRetryCount -DelaySeconds $LockRetryDelay
                 Write-ProcessLog -Message "Moved $($Item.FullName) to $destinationPath (Get-Date source: $($dateInfo.Source))" -LogFile $LogFile
                 $script:processedCount++
@@ -610,7 +629,9 @@ function Move-PictureToDateFolder {
 
     end {
         try {
-            # Fix: Ensure consistent time span calculation
+            # Count only files that finished processing (end runs only when process didn't throw),
+            # so FileCount and TotalProcessingTime cover the same set and avgTime is meaningful.
+            $script:metrics.FileCount++
             $endTime = [DateTime]::Now
             $duration = New-TimeSpan -Start $startTime -End $endTime
             $script:metrics.TotalProcessingTime += $duration.TotalSeconds
@@ -862,8 +883,13 @@ function Move-PicturesByDate {
 
     process {
         try {
+            # Files already under the destination must be skipped: with -Recurse, a destination
+            # nested inside the source (e.g. Pictures -> Pictures\Camera Roll) would otherwise
+            # re-process already-sorted files.
+            $destPrefix = ((Resolve-Path -LiteralPath $DestinationDirectory).ProviderPath).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
             $items = @(Get-ChildItem -Path $SourceDirectory -File -Recurse
-                | Where-Object { $FileExtensions -contains $_.Extension.ToLower() })
+                | Where-Object { $FileExtensions -contains $_.Extension.ToLower() }
+                | Where-Object { -not $_.FullName.StartsWith($destPrefix, [System.StringComparison]::OrdinalIgnoreCase) })
 
             $script:totalItems = $items.Count
             Write-ProcessLog -Message "Found $($items.Count) matching files to process" -LogFile $resolvedLogPath
