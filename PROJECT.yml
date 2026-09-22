@@ -1,8 +1,9 @@
 # The projects this repo holds. Schema: the tasks repo, SCHEMA.md
 projects:
-  - name:     PowerShell utilities
-    kind:     maintain
-    state:    healthy
-    next:     "run as needed; extend when a new sorting or maintenance job comes up"
-    trackers: [README.md]
-    review:   2026-09-22
+  - name:        PowerShell utilities
+    kind:        maintain
+    state:       healthy
+    asserted_by: Alon, first-hand - a tool he uses
+    next:        "run as needed; extend when a new sorting or maintenance job comes up"
+    trackers:    [README.md]
+    review:      2026-09-20
