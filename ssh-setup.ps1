@@ -10,7 +10,7 @@
 .PARAMETER UserAtHost
     The SSH target, e.g. 'user@host'.
 .PARAMETER PublicKeyPath
-    Path to the .pub key to install. Defaults to the repo's remote-ssh public key.
+    Path to the .pub key to install. Defaults to your own key, ~/.ssh/id_ed25519.pub.
 .EXAMPLE
     . .\ssh-setup.ps1
     Add-SshPublicKeyToRemote -UserAtHost 'user@host'
@@ -26,7 +26,7 @@ function Add-SshPublicKeyToRemote {
 
         [Parameter(Position = 1)]
         [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
-        [string]$PublicKeyPath = (Join-Path $PSScriptRoot 'id_ed25519-remote-ssh.pub')
+        [string]$PublicKeyPath = (Join-Path -Path $HOME -ChildPath '.ssh' -AdditionalChildPath 'id_ed25519.pub')
     )
 
     Set-StrictMode -Version Latest
