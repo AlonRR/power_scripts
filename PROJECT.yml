@@ -1,4 +1,6 @@
 # The projects this repo holds. Schema: the tasks repo, SCHEMA.md
+# schema version: set by `ledger migrate` or `ledger init` -- do not edit by hand
+schema: 1
 projects:
   - name:        PowerShell utilities
     kind:        maintain
